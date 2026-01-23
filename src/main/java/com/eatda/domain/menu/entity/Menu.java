@@ -22,6 +22,10 @@ public class Menu {
     private String menuBody;
     private Boolean menuStatus;
     private int price;
+    private int stock;
+
+    @Version
+    private Long version;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "restaurant_id")
@@ -76,6 +80,16 @@ public class Menu {
      */
     public void toggleStatus() {
         this.menuStatus = !Boolean.TRUE.equals(this.menuStatus);
+    }
+
+    /**
+     * 메뉴 재고를 차감합니다.
+     */
+    public void decreaseStock(int quantity) {
+        if (this.stock < quantity) {
+            throw new IllegalArgumentException("재고가 부족합니다.");
+        }
+        this.stock -= quantity;
     }
 
     /**

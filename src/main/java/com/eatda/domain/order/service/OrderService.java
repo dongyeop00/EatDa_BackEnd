@@ -31,6 +31,49 @@ public class OrderService {
     private final MenuRepository menuRepository;
 
     @Transactional
+    public OrderResponseDTO createOrderWithOptimisticLock(OrderRequestDTO orderRequestDTO) {
+        // 아동 조회 및 결제
+        Child child = childRepository.findById(orderRequestDTO.getChildId())
+                .orElseThrow(() -> new CustomException(ErrorCode.CHILD_NOT_FOUND));
+
+        child.pay(orderRequestDTO.getTotalsum());
+
+        // 식당 조회
+        Restaurant restaurant = restaurantRepository.findById(orderRequestDTO.getRestaurantId())
+                .orElseThrow(() -> new CustomException(ErrorCode.RESTAURANT_NOT_FOUND));
+
+        // 주문 생성
+        Order order = Order.builder()
+                .child(child)
+                .restaurant(restaurant)
+                .orderTime(LocalDateTime.now())
+                .menuOrders(new ArrayList<>())
+                .build();
+
+        // 메뉴 추가
+        for (OrderRequestDTO.MenuOrder menuOrderRequest : orderRequestDTO.getMenuOrders()) {
+            // 일반 조회 (낙관적 락 활용)
+            Menu menu = menuRepository.findById(menuOrderRequest.getMenuId())
+                    .orElseThrow(() -> new CustomException(ErrorCode.MENU_NOT_FOUND));
+
+            MenuOrder newMenuOrder = MenuOrder.builder()
+                    .menu(menu)
+                    .menuCount(menuOrderRequest.getMenuCount())
+                    .order(order)
+                    .build();
+
+            order.getMenuOrders().add(newMenuOrder);
+
+            // 재고 차감 추가
+            menu.decreaseStock(menuOrderRequest.getMenuCount());
+        }
+
+        orderRepository.save(order);
+
+        return OrderResponseDTO.from(order);
+    }
+
+    @Transactional
     public OrderResponseDTO createOrder(OrderRequestDTO orderRequestDTO) {
         // 아동 조회 및 결제
         Child child = childRepository.findById(orderRequestDTO.getChildId())
@@ -53,7 +96,8 @@ public class OrderService {
 
         // 메뉴 추가
         for (OrderRequestDTO.MenuOrder menuOrderRequest : orderRequestDTO.getMenuOrders()) {
-            Menu menu = menuRepository.findById(menuOrderRequest.getMenuId())
+            // 비관적 락이 적용된 조회 메서드 사용
+            Menu menu = menuRepository.findByIdWithPessimisticLock(menuOrderRequest.getMenuId())
                     .orElseThrow(() -> new CustomException(ErrorCode.MENU_NOT_FOUND));
 
             MenuOrder newMenuOrder = MenuOrder.builder()
@@ -63,6 +107,9 @@ public class OrderService {
                     .build();
 
             order.getMenuOrders().add(newMenuOrder);
+
+            // 재고 차감 추가
+            menu.decreaseStock(menuOrderRequest.getMenuCount());
         }
 
         orderRepository.save(order);
